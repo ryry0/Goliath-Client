@@ -1,0 +1,245 @@
+/*
+Author: Ryan - David Reyes
+*/
+//check updated ctrlrnix
+//and replace it and stuff
+#include <iostream>
+#include <cmath>
+#include "tcpipnix.h"
+#include "ctrlrnix.h"
+
+
+const int LSTICK_DEADZONE = 200;
+const int LSTICK_MAX = 32767;
+
+//steering commands range from -MAX_STEER to MAX_STEER
+const int MAX_STEER = 15000; 
+//const int STEERING_MAX = 30000;
+//const int STEERING_MIN = -30000;
+
+/*
+   const int TRIGGER_DEFAULT = 32767;
+   const int TRIGGER_MIN = 134;
+   const int TRIGGER_MAX = 65401;
+*/
+
+const int TRIGGER_MAX = 65535;
+const int START_BUTTON = 8;
+
+const int MAX_THROTTLE = 50; 
+const int MAX_BRAKE = 6656;
+
+/*
+const int RIGHT_BUMPER = 0x20;
+const int LEFT_BUMPER = 0x10;
+*/
+
+const int GEAR_POSITIONS[5] = {0, -2048*7, -2048*13, -2048*16, -2048*24};
+
+enum gearPos {PARK, REVERSE, NEUTRAL, LOW, HIGH};
+
+const char STEERMSG = 'S';
+const char GEARMSG = 'G';
+const char THROTMSG = 'T';
+const char BRAKEMSG = 'B';
+const char STOPMSG = 'X';
+
+const int PORT = 65534;
+const char * ADDRESS = "127.0.0.1"; //11.26";
+const char * CTRLRADDRDEFAULT = "/dev/input/js0";
+
+/*
+ * The controller returns 16 bit values for the analog sticks and the 
+ * analog triggers. all other buttons return 0 when not pressed and 1 when
+ * pressed.
+ */
+struct controllerValues
+{
+  int LstickXValue;
+  int startButton;
+  unsigned int LTrigger;
+  unsigned int RTrigger;
+  int LBumper;
+  int RBumper;
+};
+
+struct commandValues
+{
+  unsigned int throttleVal;
+  int steerVal;
+  unsigned int brakeVal;
+  int gearSetting;
+  int gearVal;
+  int startPressed;
+};
+
+bool init(TCP & tcpConnection, Ctrlr &controller);
+void readController(Ctrlr & controller, controllerValues & ctrlrValues);
+void mapValues(const controllerValues & ctrlrValues, commandValues & comValues);
+void sendCommands(TCP & tcpConnection, const commandValues & comValues);
+void sendData(TCP & tcpConnection, char messageType, int data);
+
+int main()
+{
+  int throttleVal = 0, 
+    brakeVal = 0, steerVal;
+
+  int gearSetting = PARK;
+  int gearVal = 0;
+
+  bool active = true;
+
+  Ctrlr controller;
+  TCP tcpConnection;
+
+  controllerValues ctrlrValues;
+  commandValues comValues;
+
+  //if initialization fails
+  if (! init(tcpConnection, controller))
+    return 1;
+
+  while (active)
+  {
+    //if the controller registers a change from prec state
+    readController(controller, ctrlrValues);
+    //map the values and send the updated commands
+    mapValues(ctrlrValues, comValues);
+    sendCommands(tcpConnection, comValues);
+  }
+  return 0;
+}
+
+bool init(TCP & tcpConnection, Ctrlr &controller)
+{
+  if (!controller.openController(CTRLRADDRDEFAULT))
+    std::cout << "Controller initialized!" << std::endl;
+
+  else 
+  {
+    std::cout << "Controller not found!" << std::endl;
+    return false;
+  }
+
+  if (tcpConnection.connectToHost(PORT, ADDRESS))
+  {
+    std::cout << "Connection success!" << std::endl;
+    return true;
+  }
+  else
+  {
+    std::cout << "Connection Failed!" << std::endl;
+    return false;
+  }
+}
+
+
+//returns true if the controller data has changed since the last update
+void readController(Ctrlr & controller, controllerValues & ctrlrValues)
+{
+  controller.update();
+  ctrlrValues.LstickXValue = controller.getStickvalue(XAXIS);
+  //get L2 
+  ctrlrValues.LTrigger = controller.getStickvalue(YAXIS2);
+  //get R2
+  ctrlrValues.RTrigger = controller.getStickvalue(YHAT);
+  ctrlrValues.startButton = controller.getButton(8);
+  ctrlrValues.LBumper = controller.getButton(6);
+  ctrlrValues.RBumper = controller.getButton(7);
+}
+
+//this function translates the controller data into commands for the ATV
+void mapValues(const controllerValues & ctrlrValues, commandValues & comValues)
+{
+  comValues.startPressed = ctrlrValues.startButton;
+
+  //make the throttle and the brake be some proportion of
+  //the max brake and max throttle
+  comValues.brakeVal = ctrlrValues.LTrigger * 
+    static_cast<double> (MAX_BRAKE)/(TRIGGER_MAX);
+
+  comValues.throttleVal = ctrlrValues.RTrigger *
+    static_cast<double> (MAX_THROTTLE)/(TRIGGER_MAX);
+
+  //if the controller's L-stick is out of the deadzone
+  if (ctrlrValues.LstickXValue > LSTICK_DEADZONE)
+  {
+    comValues.steerVal = ctrlrValues.LstickXValue * 
+      static_cast<double> (MAX_STEER) / 
+      (LSTICK_MAX);
+  }
+
+  /* if the right bumper is pressed, the gear is set to some gear less
+   * than high, and the throttle being sent to the ATV is zero.
+   */
+
+  if (  (ctrlrValues.RBumper == 1) && 
+      (comValues.gearSetting < HIGH) &&
+      (comValues.throttleVal == 0) )
+  {
+    //the gear value is the new gear setting.
+    comValues.gearVal=GEAR_POSITIONS[++comValues.gearSetting];
+  }
+
+  /* if the left bumper is pressed, and the gear is in some gear greater
+   * than park, and the throttle sent to ATV = 0
+   */
+  else if ( (ctrlrValues.LBumper == 1) &&
+      (comValues.gearSetting > PARK) &&
+      (comValues.throttleVal == 0) )
+  {
+    //the gear value is the new gear setting.
+    comValues.gearVal=GEAR_POSITIONS[--comValues.gearSetting];
+  }
+}
+
+void sendCommands(TCP & tcpConnection, const commandValues & comValues)
+{
+  static bool initialized = false;
+  static commandValues prevComValues;
+  if (!initialized)
+  {
+    prevComValues = comValues;
+    initialized = true;
+  }
+
+  /* throttleVal THROTMSG
+   * steerVal STEERMSG
+   * brakeVal BRAKEMSG
+   * gearSetting 
+   * gearVal GEARMSG
+   * startPressed STOPMSG
+   */
+
+  /* compare the current values to the prev values, and if they're 
+   * different, send the updated commands to ATV host.
+   */
+
+  if(comValues.throttleVal != prevComValues.throttleVal)
+    sendData(tcpConnection, THROTMSG, comValues.throttleVal);
+
+  if(comValues.steerVal != prevComValues.steerVal)
+    sendData(tcpConnection, STEERMSG, comValues.steerVal);
+
+  if(comValues.brakeVal != prevComValues.brakeVal)
+    sendData(tcpConnection, BRAKEMSG, comValues.brakeVal);
+
+  //takes care of both gearsetting and gearval
+  if(comValues.gearSetting != prevComValues.gearSetting)
+    sendData(tcpConnection, GEARMSG, comValues.gearVal);
+
+  if(comValues.startPressed != prevComValues.startPressed);
+    sendData(tcpConnection, STOPMSG, 0x0000);
+
+  prevComValues = comValues;
+}
+
+void sendData(TCP & tcpConnection, char messageType, int data)
+{
+  //send the character that identifies the data first
+  tcpConnection.sendData(tcpConnection.getSocket(), 
+    (char *) &messageType, sizeof(messageType));
+
+  tcpConnection.sendData(tcpConnection.getSocket(),
+    (char *) &data, sizeof(data));
+}
