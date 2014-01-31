@@ -11,6 +11,7 @@ Author: Ryan - David Reyes
 
 const int LSTICK_DEADZONE = 200;
 const int LSTICK_MAX = 32767;
+const int LSTICK_DEFAULT = 0;
 
 //steering commands range from -MAX_STEER to MAX_STEER
 const int MAX_STEER = 15000; 
@@ -18,13 +19,20 @@ const int MAX_STEER = 15000;
 //const int STEERING_MIN = -30000;
 
 /*
-   const int TRIGGER_DEFAULT = 32767;
    const int TRIGGER_MIN = 134;
    const int TRIGGER_MAX = 65401;
-*/
 
+*/
+const int BUTTON_DEFAULT = 0;
+
+//Throttle is always a positive integer
+//based on a proportion of 0-TRIGGER_MAX
 const int TRIGGER_MAX = 65535;
-const int START_BUTTON = 8;
+const int TRIGGER_OFFSET = 32767;
+const int TRIGGER_DEFAULT = -32767;
+const int START_BUTTON = 7;
+const int LBUMPER = 4;
+const int RBUMPER = 5;
 
 const int MAX_THROTTLE = 50; 
 const int MAX_BRAKE = 6656;
@@ -57,8 +65,8 @@ struct controllerValues
 {
   int LstickXValue;
   int startButton;
-  unsigned int LTrigger;
-  unsigned int RTrigger;
+  int LTrigger;
+  int RTrigger;
   int LBumper;
   int RBumper;
 };
@@ -71,6 +79,16 @@ struct commandValues
   int gearSetting;
   int gearVal;
   int startPressed;
+  
+  commandValues()
+  {
+    throttleVal = 0;
+    steerVal = 0;
+    brakeVal = 0;
+    gearSetting = PARK;
+    gearVal = GEAR_POSITIONS[PARK];
+    startPressed = 0;
+  }
 };
 
 bool init(TCP & tcpConnection, Ctrlr &controller);
@@ -78,15 +96,10 @@ void readController(Ctrlr & controller, controllerValues & ctrlrValues);
 void mapValues(const controllerValues & ctrlrValues, commandValues & comValues);
 void sendCommands(TCP & tcpConnection, const commandValues & comValues);
 void sendData(TCP & tcpConnection, char messageType, int data);
+void calibrateController(Ctrlr & controller);
 
 int main()
 {
-  int throttleVal = 0, 
-    brakeVal = 0, steerVal;
-
-  int gearSetting = PARK;
-  int gearVal = 0;
-
   bool active = true;
 
   Ctrlr controller;
@@ -98,6 +111,7 @@ int main()
   //if initialization fails
   if (! init(tcpConnection, controller))
     return 1;
+  
 
   while (active)
   {
@@ -115,8 +129,10 @@ bool init(TCP & tcpConnection, Ctrlr &controller)
 {
  
   if (controller.openController(CTRLRADDRDEFAULT))
+  {
+    calibrateController(controller);
     std::cout << "Controller initialized!" << std::endl;
-
+  }
   else 
   {
     std::cout << "Controller not found!" << std::endl;
@@ -145,9 +161,10 @@ void readController(Ctrlr & controller, controllerValues & ctrlrValues)
   ctrlrValues.LTrigger = controller.getStickvalue(YAXIS2);
   //get R2
   ctrlrValues.RTrigger = controller.getStickvalue(YHAT);
-  ctrlrValues.startButton = controller.getButton(8);
-  ctrlrValues.LBumper = controller.getButton(6);
-  ctrlrValues.RBumper = controller.getButton(7);
+  //the following buttons are as of latest controller test
+  ctrlrValues.startButton = controller.getButton(START_BUTTON);
+  ctrlrValues.LBumper = controller.getButton(LBUMPER); 
+  ctrlrValues.RBumper = controller.getButton(RBUMPER);
 }
 
 //this function translates the controller data into commands for the ATV
@@ -157,14 +174,15 @@ void mapValues(const controllerValues & ctrlrValues, commandValues & comValues)
 
   //make the throttle and the brake be some proportion of
   //the max brake and max throttle
-  comValues.brakeVal = ctrlrValues.LTrigger * 
+  comValues.brakeVal = (ctrlrValues.LTrigger + TRIGGER_OFFSET)* 
     static_cast<double> (MAX_BRAKE)/(TRIGGER_MAX);
 
-  comValues.throttleVal = ctrlrValues.RTrigger *
+  comValues.throttleVal = (ctrlrValues.RTrigger + TRIGGER_OFFSET)*
     static_cast<double> (MAX_THROTTLE)/(TRIGGER_MAX);
 
   //if the controller's L-stick is out of the deadzone
-  if (ctrlrValues.LstickXValue > LSTICK_DEADZONE)
+  //if (ctrlrValues.LstickXValue > LSTICK_DEADZONE)
+  if (std::abs(ctrlrValues.LstickXValue) > LSTICK_DEADZONE)
   {
     comValues.steerVal = ctrlrValues.LstickXValue * 
       static_cast<double> (MAX_STEER) / 
@@ -216,7 +234,6 @@ void sendCommands(TCP & tcpConnection, const commandValues & comValues)
   /* compare the current values to the prev values, and if they're 
    * different, send the updated commands to ATV host.
    */
-
   if(comValues.throttleVal != prevComValues.throttleVal)
     sendData(tcpConnection, THROTMSG, comValues.throttleVal);
 
@@ -230,7 +247,7 @@ void sendCommands(TCP & tcpConnection, const commandValues & comValues)
   if(comValues.gearSetting != prevComValues.gearSetting)
     sendData(tcpConnection, GEARMSG, comValues.gearVal);
 
-  if(comValues.startPressed != prevComValues.startPressed);
+  if(comValues.startPressed == 1)
     sendData(tcpConnection, STOPMSG, 0x0000);
 
   prevComValues = comValues;
@@ -244,4 +261,31 @@ void sendData(TCP & tcpConnection, char messageType, int data)
 
   tcpConnection.sendData(tcpConnection.getSocket(),
     (char *) &data, sizeof(data));
+}
+
+void calibrateController(Ctrlr & controller)
+{
+  std::cout << "Please press/move the L Stick" <<std::endl;
+  while (controller.getStickvalue(XAXIS) != LSTICK_DEFAULT)
+    controller.update();
+  
+  //get L2 
+  std::cout << "Please press the L Trigger" <<std::endl;
+  while(controller.getStickvalue(YAXIS2) != TRIGGER_DEFAULT)
+    controller.update();
+
+  //get R2
+  std::cout << "Please press the R Trigger" <<std::endl;
+  while(controller.getStickvalue(YHAT) != TRIGGER_DEFAULT)
+    controller.update();
+
+  std::cout << "Please press the Start Button" <<std::endl;
+  while (controller.getButton(START_BUTTON) != BUTTON_DEFAULT)
+    controller.update();
+  std::cout << "Please press the L Bumper" <<std::endl;
+  while (controller.getButton(LBUMPER) != BUTTON_DEFAULT)
+    controller.update();
+  std::cout << "Please press the R Bumper" <<std::endl;
+  while (controller.getButton(RBUMPER) != BUTTON_DEFAULT)
+    controller.update();
 }
