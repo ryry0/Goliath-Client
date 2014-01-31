@@ -41,7 +41,8 @@ struct controllerState
 class Ctrlr
 {
   public:
-    Ctrlr(const std::string=DEFAULTADDRESS);
+    Ctrlr();
+    Ctrlr(const std::string);
     ~Ctrlr();
     bool openController(const std::string);
     void readControllerEvent();

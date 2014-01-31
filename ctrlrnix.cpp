@@ -11,13 +11,11 @@
 #include <fcntl.h>  //file descriptor manipulation
 #include <pthread.h>
 
-/*
 Ctrlr::Ctrlr()
 {
   contEv = new controllerEvent;
   contSt = new controllerState;
 }
-*/
 
 Ctrlr::Ctrlr(const std::string joyAddressArg) 
 {
@@ -63,5 +61,6 @@ bool Ctrlr::openController(std::string joyAddressArg)
   if (controllerfd < 0)
     return false;
 
-  return true;
+  else
+    return true;
 }

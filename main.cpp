@@ -103,6 +103,7 @@ int main()
   {
     //if the controller registers a change from prec state
     readController(controller, ctrlrValues);
+
     //map the values and send the updated commands
     mapValues(ctrlrValues, comValues);
     sendCommands(tcpConnection, comValues);
@@ -112,7 +113,8 @@ int main()
 
 bool init(TCP & tcpConnection, Ctrlr &controller)
 {
-  if (!controller.openController(CTRLRADDRDEFAULT))
+ 
+  if (controller.openController(CTRLRADDRDEFAULT))
     std::cout << "Controller initialized!" << std::endl;
 
   else 
