@@ -1,4 +1,13 @@
-TODO:
+This program is the clientside implementation of the GOLIATH autonomous vehicle
+control program. It accesses a gamepad and transmits that datavia TCPIP to a
+server hosted on the vehicle itself.
 
+Instructions:
+To run it:
+
+./Goliath_Client <host-ip-address> <path-to-gamepad>
+
+The default values are 127.0.0.1 and /dev/input/js0 respectively.
+
+TODO:
 1) Heartbeat
-2) Config file

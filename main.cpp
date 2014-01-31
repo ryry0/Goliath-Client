@@ -53,8 +53,8 @@ const char BRAKEMSG = 'B';
 const char STOPMSG = 'X';
 
 const int PORT = 65534;
-const char * ADDRESS = "127.0.0.1"; //11.26";
-const char * CTRLRADDRDEFAULT = "/dev/input/js0";
+char * ADDRESS = "127.0.0.1"; //11.26";
+char * CTRLRADDRDEFAULT = "/dev/input/js0";
 
 /*
  * The controller returns 16 bit values for the analog sticks and the 
@@ -91,14 +91,14 @@ struct commandValues
   }
 };
 
-bool init(TCP & tcpConnection, Ctrlr &controller);
+bool init(  int argc, char ** argv, TCP & tcpConnection, Ctrlr &controller);
 void readController(Ctrlr & controller, controllerValues & ctrlrValues);
 void mapValues(const controllerValues & ctrlrValues, commandValues & comValues);
 void sendCommands(TCP & tcpConnection, const commandValues & comValues);
 void sendData(TCP & tcpConnection, char messageType, int data);
 void calibrateController(Ctrlr & controller);
 
-int main()
+int main(int argc, char ** argv)
 {
   bool active = true;
 
@@ -109,7 +109,7 @@ int main()
   commandValues comValues;
 
   //if initialization fails
-  if (! init(tcpConnection, controller))
+  if (! init(argc, argv, tcpConnection, controller))
     return 1;
   
 
@@ -125,10 +125,24 @@ int main()
   return 0;
 }
 
-bool init(TCP & tcpConnection, Ctrlr &controller)
+bool init(  int argc, char ** argv, TCP & tcpConnection, Ctrlr &controller)
 {
- 
-  if (controller.openController(CTRLRADDRDEFAULT))
+  char * address = ADDRESS;
+  char * ctrlr_addr = CTRLRADDRDEFAULT;
+
+  switch (argc)
+  {
+    case 3:
+      ctrlr_addr = argv[2];
+    case 2:
+      address = argv[1];
+      break;
+
+    default:
+      break;
+  }
+
+  if (controller.openController(ctrlr_addr))
   {
     calibrateController(controller);
     std::cout << "Controller initialized!" << std::endl;
@@ -139,7 +153,7 @@ bool init(TCP & tcpConnection, Ctrlr &controller)
     return false;
   }
 
-  if (tcpConnection.connectToHost(PORT, ADDRESS))
+  if (tcpConnection.connectToHost(PORT, address))
   {
     std::cout << "Connection success!" << std::endl;
     return true;
