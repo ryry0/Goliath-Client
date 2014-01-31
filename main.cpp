@@ -171,7 +171,7 @@ void readController(Ctrlr & controller, controllerValues & ctrlrValues)
 void mapValues(const controllerValues & ctrlrValues, commandValues & comValues)
 {
   comValues.startPressed = ctrlrValues.startButton;
-
+  static int prevLBumper = 0, prevRBumper = 0;
   //make the throttle and the brake be some proportion of
   //the max brake and max throttle
   comValues.brakeVal = (ctrlrValues.LTrigger + TRIGGER_OFFSET)* 
@@ -193,23 +193,29 @@ void mapValues(const controllerValues & ctrlrValues, commandValues & comValues)
    * than high, and the throttle being sent to the ATV is zero.
    */
 
-  if (  (ctrlrValues.RBumper == 1) && 
-      (comValues.gearSetting < HIGH) &&
-      (comValues.throttleVal == 0) )
+  if ( (ctrlrValues.RBumper != prevRBumper) || 
+        (ctrlrValues.LBumper != prevLBumper ))
   {
-    //the gear value is the new gear setting.
-    comValues.gearVal=GEAR_POSITIONS[++comValues.gearSetting];
-  }
+    if (  (ctrlrValues.RBumper == 1) && 
+        (comValues.gearSetting < HIGH) &&
+        (comValues.throttleVal == 0) )
+    {
+      //the gear value is the new gear setting.
+      comValues.gearVal=GEAR_POSITIONS[++comValues.gearSetting];
+    }
 
-  /* if the left bumper is pressed, and the gear is in some gear greater
-   * than park, and the throttle sent to ATV = 0
-   */
-  else if ( (ctrlrValues.LBumper == 1) &&
-      (comValues.gearSetting > PARK) &&
-      (comValues.throttleVal == 0) )
-  {
-    //the gear value is the new gear setting.
-    comValues.gearVal=GEAR_POSITIONS[--comValues.gearSetting];
+    /* if the left bumper is pressed, and the gear is in some gear greater
+     * than park, and the throttle sent to ATV = 0
+     */
+    else if ( (ctrlrValues.LBumper == 1) &&
+        (comValues.gearSetting > PARK) &&
+        (comValues.throttleVal == 0) )
+    {
+      //the gear value is the new gear setting.
+      comValues.gearVal=GEAR_POSITIONS[--comValues.gearSetting];
+    }
+    prevRBumper = ctrlrValues.RBumper;
+    prevLBumper = ctrlrValues.LBumper;
   }
 }
 
