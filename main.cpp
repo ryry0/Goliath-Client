@@ -80,7 +80,7 @@ struct commandValues
   int gearVal;
   int startPressed;
   
-  commandValues()
+  commandValues() //struct constructor: initializes the command values. 
   {
     throttleVal = 0;
     steerVal = 0;
